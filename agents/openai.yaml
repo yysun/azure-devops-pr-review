@@ -1,4 +1,4 @@
 interface:
   display_name: "Azure DevOps PR Review"
-  short_description: "Review Azure DevOps PRs for actionable defects"
-  default_prompt: "Use $azure-devops-pr-review to review Azure DevOps pull request 1234."
+  short_description: "Review and explicitly publish PR comments"
+  default_prompt: "Use $azure-devops-pr-review to review Azure DevOps pull request 1234 without publishing comments."

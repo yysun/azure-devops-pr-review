@@ -1,8 +1,8 @@
 ---
 name: azure-devops-pr-review
-description: Review an Azure DevOps pull request by numeric PR ID from its checked-out source branch, deriving the exact target branch from Azure DevOps metadata and using its merge base with HEAD. Use when asked to inspect, audit, or code-review an Azure DevOps PR for actionable defects without changing the repository.
+description: Review an Azure DevOps pull request by numeric PR ID from its checked-out source branch, deriving the exact target branch from Azure DevOps metadata and using its merge base with HEAD. Use when asked to inspect, audit, or code-review an Azure DevOps PR for actionable defects, or to explicitly publish a completed final review as PR comments after verifying the reviewed commit was pushed.
 metadata:
-  version: "1.0.1"
+  version: "1.1.0"
 ---
 
 # Azure DevOps PR Review
@@ -13,7 +13,7 @@ Perform a read-only code review of one Azure DevOps pull request. Accept one pos
 
 - Do not modify, create, delete, or restore repository files.
 - Do not use checkout, switch, pull, fetch, merge, rebase, reset, stash, clean, commit, format, autofix, snapshot-update, or code-generation commands.
-- Do not post comments, votes, status changes, or other updates to Azure DevOps.
+- Do not post comments, votes, status changes, or other updates to Azure DevOps during review. Only post PR comments through the separately authorized **Publish the Final Review Explicitly** phase.
 - Use only the existing local remote-tracking ref for the PR's exact target branch. If it is missing or may be stale, disclose that limitation instead of updating it.
 - Capture `git status --short --branch` before reviewing. Preserve all existing user changes and exclude uncommitted changes from the PR diff.
 
@@ -21,7 +21,7 @@ Perform a read-only code review of one Azure DevOps pull request. Accept one pos
 
 1. Require a positive numeric Azure DevOps PR ID. Ask for it if absent or ambiguous.
 2. Find the repository root with `git rev-parse --show-toplevel` and confirm that `HEAD` resolves. Read the repository-root `AGENTS.md` before proceeding when present.
-3. Retrieve PR metadata with the read-only command `az repos pr show --id <PR_ID> --output json`. Record the title, description, `sourceRefName`, `targetRefName`, repository identity, and status.
+3. Retrieve PR metadata with the read-only command `az repos pr show --id <PR_ID> --output json`. Record the title, description, `sourceRefName`, `targetRefName`, repository identity, and status. For an explicitly requested publish, also record `mergeStatus`, `lastMergeSourceCommit.commitId`, and `lastMergeTargetCommit.commitId`.
 4. Require `targetRefName` to have the form `refs/heads/<TARGET_BRANCH>`. Remove only the `refs/heads/` prefix, preserving the target branch's exact case and slashes. Resolve it locally as `refs/remotes/origin/<TARGET_BRANCH>`.
 5. Never infer the target from the repository's default branch and never substitute `main` or `master`. For example, `refs/heads/QA` must resolve to `refs/remotes/origin/QA`.
 6. Compare `sourceRefName` with the current branch. If they do not match, stop unless the user explicitly confirms that the current `HEAD` represents the PR source. Never change branches to resolve the mismatch.
@@ -117,3 +117,29 @@ After the findings, always finish with these four sections:
 4. **Assumptions and unverified areas** — include unavailable metadata, the exact target ref used, stale or missing refs, environment limits, skipped checks, and source/target mismatches.
 
 If there are no actionable findings, begin the report with **No actionable findings.** Do not invent a finding to fill the format.
+
+## Publish the Final Review Explicitly
+
+Enter this phase only when the user explicitly asks to publish, post, or update the completed review on a specific PR. A request to review, fix, commit, or push does not authorize publishing. Do not publish intermediate or pre-fix results.
+
+Read [references/publishing-comments.md](references/publishing-comments.md) completely before making any Azure DevOps write.
+
+Run these gates using freshly retrieved metadata immediately before publishing:
+
+1. Require PR `status` to be `active` and `mergeStatus` to be `succeeded`.
+2. Require `git status --porcelain=v1` to produce no output.
+3. Require the current branch to match `sourceRefName` exactly. Do not accept the review-mode override.
+4. Require local `HEAD` to equal `lastMergeSourceCommit.commitId`. A mismatch means the local result was not pushed or Azure DevOps has a newer source commit.
+5. Require the local exact target ref to equal `lastMergeTargetCommit.commitId`. A mismatch means the review used stale target state.
+6. Rerun the complete review on the gated commit and publish only that final result.
+7. Retrieve the latest PR iteration, its changes, and existing threads. Never guess line positions or `changeTrackingId`, and suppress comments with an existing deterministic marker.
+
+If any gate fails, make no Azure DevOps writes. Before every POST, refresh PR metadata and rerun gates 1–5 in full. Stop if the PR status, merge status, source commit, target commit, current branch, or working-tree state no longer matches.
+
+Publish only:
+
+- one active inline thread per remaining actionable finding when the exact current line can be resolved
+- an active PR-level finding thread when no safe inline anchor exists
+- one closed PR-level summary containing the final report and reviewed commit SHA
+
+Never call reviewer, PR-status, PR-update, completion, abandonment, auto-complete, policy, or reviewer mutation endpoints. Comment-thread creation is the only permitted write.
